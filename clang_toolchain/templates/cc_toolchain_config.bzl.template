@@ -1,0 +1,125 @@
+load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
+load("@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl", "feature", "flag_group", "flag_set", "tool_path")
+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+
+def _impl(ctx):
+    tool_paths = [
+        tool_path(
+            name = "gcc",
+            path = "clang_wrapper.sh",
+        ),
+        tool_path(
+            name = "ld",
+            path = "clang_wrapper.sh",
+        ),
+        tool_path(
+            name = "ar",
+            path = "bin/llvm-ar",
+        ),
+        tool_path(
+            name = "cpp",
+            path = "clang++_wrapper.sh",
+        ),
+        tool_path(
+            name = "gcov",
+            path = "bin/llvm-cov",
+        ),
+        tool_path(
+            name = "nm",
+            path = "bin/llvm-nm",
+        ),
+        tool_path(
+            name = "objdump",
+            path = "bin/llvm-objdump",
+        ),
+        tool_path(
+            name = "strip",
+            path = "bin/llvm-strip",
+        ),
+    ]
+
+    cxx_builtin_include_directories = [
+        "{clang_include_path}",
+        "/usr/include",
+        "/usr/include/c++/13",
+        "/usr/include/x86_64-linux-gnu/c++/13",
+        "/usr/include/x86_64-linux-gnu",
+        "/usr/local/include",
+    ]
+
+    features = [
+        feature(
+            name = "default_compile_flags",
+            enabled = True,
+            flag_sets = [
+                flag_set(
+                    actions = [
+                        ACTION_NAMES.assemble,
+                        ACTION_NAMES.preprocess_assemble,
+                        ACTION_NAMES.linkstamp_compile,
+                        ACTION_NAMES.c_compile,
+                        ACTION_NAMES.cpp_compile,
+                        ACTION_NAMES.cpp_header_parsing,
+                        ACTION_NAMES.cpp_module_compile,
+                        ACTION_NAMES.cpp_module_codegen,
+                        ACTION_NAMES.lto_backend,
+                        ACTION_NAMES.clif_match,
+                    ],
+                    flag_groups = [
+                        flag_group(
+                            flags = [
+                                "-fstack-protector",
+                                "-Wall",
+                                "-Wunused-but-set-parameter",
+                                "-Wno-free-nonheap-object",
+                                "-fcolor-diagnostics",
+                                "-fno-omit-frame-pointer",
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+        ),
+        feature(
+            name = "default_link_flags",
+            enabled = True,
+            flag_sets = [
+                flag_set(
+                    actions = [
+                        ACTION_NAMES.cpp_link_executable,
+                        ACTION_NAMES.cpp_link_dynamic_library,
+                        ACTION_NAMES.cpp_link_nodeps_dynamic_library,
+                    ],
+                    flag_groups = [
+                        flag_group(
+                            flags = [
+                                "-lstdc++",
+                                "-lm",
+                            ],
+                        ),
+                    ],
+                ),
+            ],
+        ),
+    ]
+
+    return cc_common.create_cc_toolchain_config_info(
+        ctx = ctx,
+        features = features,
+        cxx_builtin_include_directories = cxx_builtin_include_directories,
+        toolchain_identifier = "hermetic-clang-{version}",
+        host_system_name = "local",
+        target_system_name = "local",
+        target_cpu = "k8",
+        target_libc = "unknown",
+        compiler = "clang",
+        abi_version = "unknown",
+        abi_libc_version = "unknown",
+        tool_paths = tool_paths,
+    )
+
+cc_toolchain_config = rule(
+    implementation = _impl,
+    attrs = {},
+    provides = [CcToolchainConfigInfo],
+)
