@@ -1,6 +1,5 @@
 load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
 load("@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl", "feature", "flag_group", "flag_set", "tool_path")
-load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 
 def _impl(ctx):
     tool_paths = [
@@ -10,7 +9,7 @@ def _impl(ctx):
         ),
         tool_path(
             name = "ld",
-            path = "clang_wrapper.sh",
+            path = "bin/ld.lld",
         ),
         tool_path(
             name = "ar",
@@ -40,11 +39,9 @@ def _impl(ctx):
 
     cxx_builtin_include_directories = [
         "{clang_include_path}",
-        "/usr/include",
-        "/usr/include/c++/13",
-        "/usr/include/x86_64-linux-gnu/c++/13",
-        "/usr/include/x86_64-linux-gnu",
-        "/usr/local/include",
+        "{repo_path}/sysroot/include/c++/14.2.0",
+        "{repo_path}/sysroot/include/c++/14.2.0/x86_64-alpine-linux-musl",
+        "{repo_path}/sysroot/include",
     ]
 
     features = [
@@ -68,6 +65,13 @@ def _impl(ctx):
                     flag_groups = [
                         flag_group(
                             flags = [
+                                "-stdlib=libstdc++",
+                                "-nostdinc",
+                                "-nostdinc++",
+                                "-isystem", "{repo_path}/sysroot/include/c++/14.2.0",
+                                "-isystem", "{repo_path}/sysroot/include/c++/14.2.0/x86_64-alpine-linux-musl",
+                                "-isystem", "{repo_path}/sysroot/include",
+                                "-isystem", "{clang_include_path}",
                                 "-fstack-protector",
                                 "-Wall",
                                 "-Wunused-but-set-parameter",
@@ -93,8 +97,19 @@ def _impl(ctx):
                     flag_groups = [
                         flag_group(
                             flags = [
+                                "-fuse-ld=lld",
+                                "-Wl,--build-id=sha1",
+                                "-static",
+                                "-nostdlib",
+                                "-L{repo_path}/sysroot/lib",
+                                "-L{repo_path}/lib/x86_64-unknown-linux-gnu",
+                                "{repo_path}/sysroot/lib/crt1.o",
+                                "{repo_path}/sysroot/lib/crti.o",
                                 "-lstdc++",
+                                "-lunwind",
+                                "-lc",
                                 "-lm",
+                                "{repo_path}/sysroot/lib/crtn.o",
                             ],
                         ),
                     ],
