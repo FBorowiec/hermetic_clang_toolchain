@@ -101,7 +101,7 @@ def _fetch_alpine_packages(repository_ctx):
 def _create_files(repository_ctx):
     repository_ctx.execute(["mkdir", "-p", "include"])
     clang_wrapper_content = repository_ctx.read(
-        Label("@@hermetic_clang_toolchain//:clang_toolchain/templates/clang_wrapper.sh"),
+        repository_ctx.attr._clang_wrapper_template,
     )
     repository_ctx.file(
         "clang_wrapper.sh",
@@ -110,7 +110,7 @@ def _create_files(repository_ctx):
     )
 
     clangpp_wrapper_content = repository_ctx.read(
-        Label("@@hermetic_clang_toolchain//:clang_toolchain/templates/clang++_wrapper.sh"),
+        repository_ctx.attr._clangpp_wrapper_template,
     )
     repository_ctx.file(
         "clang++_wrapper.sh",
@@ -118,7 +118,7 @@ def _create_files(repository_ctx):
         executable = True,
     )
 
-    build_content = repository_ctx.read(Label("@@hermetic_clang_toolchain//:clang_toolchain/templates/BUILD.bazel.template"))
+    build_content = repository_ctx.read(repository_ctx.attr._build_template)
     repository_ctx.file(
         "BUILD",
         content = build_content,
@@ -128,7 +128,7 @@ def _update_templates(repository_ctx, version):
     repo_path = str(repository_ctx.path("."))
     clang_include_path = repo_path + "/lib/clang/18/include"
 
-    cc_toolchain_config_content = repository_ctx.read(Label("@@hermetic_clang_toolchain//:clang_toolchain/templates/cc_toolchain_config.bzl.template"))
+    cc_toolchain_config_content = repository_ctx.read(repository_ctx.attr._cc_toolchain_config_template)
     cc_toolchain_config_content = cc_toolchain_config_content.replace(
         "{clang_include_path}",
         clang_include_path,
@@ -164,6 +164,22 @@ hermetic_clang_repository = repository_rule(
     attrs = {
         "url": attr.string(mandatory = True),
         "version": attr.string(mandatory = True),
+        "_clang_wrapper_template": attr.label(
+            default = "//clang_toolchain/templates:clang_wrapper.sh",
+            allow_single_file = True,
+        ),
+        "_clangpp_wrapper_template": attr.label(
+            default = "//clang_toolchain/templates:clang++_wrapper.sh",
+            allow_single_file = True,
+        ),
+        "_build_template": attr.label(
+            default = "//clang_toolchain/templates:BUILD.bazel.template",
+            allow_single_file = True,
+        ),
+        "_cc_toolchain_config_template": attr.label(
+            default = "//clang_toolchain/templates:cc_toolchain_config.bzl.template",
+            allow_single_file = True,
+        ),
     },
 )
 
