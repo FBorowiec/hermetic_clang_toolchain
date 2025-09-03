@@ -1,29 +1,49 @@
 """
-Downloads pre-built LLVM binaries and Ubuntu dependencies for hermetic toolchain
+Downloads pre-built LLVM binaries and Alpine Linux packages for hermetic toolchain
 """
 
 VERSION = "18.1.8"
-URL = "https://github.com/llvm/llvm-project/releases/download/llvmorg-{version}/clang+llvm-{version}-x86_64-linux-gnu-ubuntu-18.04.tar.xz".format(version = VERSION)
-UBUNTU_LIBS = [
+LLVM_CLANG_URL = "https://github.com/llvm/llvm-project/releases/download/llvmorg-{version}/clang+llvm-{version}-x86_64-linux-gnu-ubuntu-18.04.tar.xz".format(version = VERSION)
+
+# Alpine Linux packages for musl and libstdc++
+ALPINE_PACKAGES = [
     {
-        "name": "libtinfo5",
-        "url": "http://archive.ubuntu.com/ubuntu/pool/main/n/ncurses/libtinfo5_6.1-1ubuntu1_amd64.deb",
-        "sha256": "450bf945387029bee91d8eea76deacb8df907a1f6641fbce388933d1fdfb5a0d",
+        "name": "musl-dev",
+        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/musl-dev-1.2.5-r10.apk",
+    },
+    {
+        "name": "libstdc++",
+        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libstdc++-14.2.0-r6.apk",
+    },
+    {
+        "name": "libstdc++-dev",
+        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libstdc++-dev-14.2.0-r6.apk",
     },
 ]
 
-def _fetch_external_libs(repository_ctx):
+# Ubuntu packages needed for clang itself to run
+UBUNTU_PACKAGES = [
+    {
+        "name": "libtinfo5",
+        "url": "http://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb",
+        "sha256": "ab89265d8dd18bda6a29d7c796367d6d9f22a39a8fa83589577321e7caf3857b",
+    },
+]
+
+def _fetch_ubuntu_packages(repository_ctx):
+    """Download Ubuntu packages needed for clang to run"""
     repository_ctx.execute(["mkdir", "-p", "lib"])
-    for lib in UBUNTU_LIBS:
+
+    for pkg in UBUNTU_PACKAGES:
         repository_ctx.download(
-            url = lib["url"],
-            sha256 = lib["sha256"],
-            output = lib["name"] + ".deb",
+            url = pkg["url"],
+            sha256 = pkg["sha256"],
+            output = pkg["name"] + ".deb",
         )
         repository_ctx.execute([
             "bash",
             "-c",
-            "ar x {name}.deb && tar -xf data.tar.* && cp -r lib/x86_64-linux-gnu/* lib/ 2>/dev/null || true".format(name = lib["name"]),
+            "ar x {name}.deb && tar -xf data.tar.* && cp -r lib/x86_64-linux-gnu/* lib/ 2>/dev/null || true && cp -r usr/lib/x86_64-linux-gnu/* lib/ 2>/dev/null || true".format(name = pkg["name"]),
         ])
         repository_ctx.execute([
             "rm",
@@ -31,11 +51,55 @@ def _fetch_external_libs(repository_ctx):
             "control.tar.*",
             "data.tar.*",
             "debian-binary",
-            lib["name"] + ".deb",
+            pkg["name"] + ".deb",
             "lib/x86_64-linux-gnu",
+            "usr",
         ])
 
+def _fetch_alpine_packages(repository_ctx):
+    repository_ctx.execute(["mkdir", "-p", "alpine-root"])
+    repository_ctx.execute(["mkdir", "-p", "sysroot/lib"])
+    repository_ctx.execute(["mkdir", "-p", "sysroot/include"])
+
+    for pkg in ALPINE_PACKAGES:
+        repository_ctx.download(
+            url = pkg["url"],
+            output = pkg["name"] + ".apk",
+        )
+        repository_ctx.execute([
+            "tar",
+            "-xzf",
+            pkg["name"] + ".apk",
+            "-C",
+            "alpine-root",
+        ])
+        repository_ctx.execute(["rm", pkg["name"] + ".apk"])
+
+    repository_ctx.execute([
+        "bash",
+        "-c",
+        """
+        # Copy musl libraries and headers to sysroot
+        if [ -d alpine-root/usr/include ]; then
+            cp -r alpine-root/usr/include/* sysroot/include/ 2>/dev/null || true
+        fi
+        if [ -d alpine-root/usr/lib ]; then
+            cp -r alpine-root/usr/lib/* sysroot/lib/ 2>/dev/null || true
+        fi
+        if [ -d alpine-root/usr/lib/gcc ]; then
+            cp -r alpine-root/usr/lib/gcc/* sysroot/lib/ 2>/dev/null || true
+        fi
+        # Also copy headers to include for compatibility
+        if [ -d alpine-root/usr/include ]; then
+            cp -r alpine-root/usr/include/* include/ 2>/dev/null || true
+        fi
+        # Clean up
+        rm -rf alpine-root
+        """,
+    ])
+
 def _create_files(repository_ctx):
+    repository_ctx.execute(["mkdir", "-p", "include"])
     clang_wrapper_content = repository_ctx.read(
         Label("@//:clang_toolchain/templates/clang_wrapper.sh"),
     )
@@ -71,6 +135,9 @@ def _update_templates(repository_ctx, version):
     ).replace(
         "{version}",
         version,
+    ).replace(
+        "{repo_path}",
+        repo_path,
     )
     repository_ctx.file(
         "cc_toolchain_config.bzl",
@@ -78,7 +145,6 @@ def _update_templates(repository_ctx, version):
     )
 
 def _hermetic_clang_repository_impl(repository_ctx):
-    _fetch_external_libs(repository_ctx)
     version = repository_ctx.attr.version
     url = repository_ctx.attr.url
 
@@ -86,6 +152,9 @@ def _hermetic_clang_repository_impl(repository_ctx):
         url = url,
         stripPrefix = "clang+llvm-{version}-x86_64-linux-gnu-ubuntu-18.04".format(version = version),
     )
+
+    _fetch_ubuntu_packages(repository_ctx)
+    _fetch_alpine_packages(repository_ctx)
 
     _create_files(repository_ctx)
     _update_templates(repository_ctx, version)
@@ -103,7 +172,7 @@ def _hermetic_clang_extension_impl(_module_ctx):
 
     hermetic_clang_repository(
         name = clang_repo_name,
-        url = URL,
+        url = LLVM_CLANG_URL,
         version = VERSION,
     )
 
