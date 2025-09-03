@@ -65,7 +65,6 @@ def _impl(ctx):
                     flag_groups = [
                         flag_group(
                             flags = [
-                                "-stdlib=libstdc++",
                                 "-nostdinc",
                                 "-nostdinc++",
                                 "-isystem", "{repo_path}/sysroot/include/c++/14.2.0",
