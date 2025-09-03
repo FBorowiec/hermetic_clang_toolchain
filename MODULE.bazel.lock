@@ -141,7 +141,7 @@
   "moduleExtensions": {
     "//clang_toolchain:hermetic_clang.bzl%hermetic_clang_extension": {
       "general": {
-        "bzlTransitiveDigest": "zyNR6BrbI/5UUWro+KyFuAT9q9eZDhIP4484Jvkgxmg=",
+        "bzlTransitiveDigest": "3zt+kBP2aikbVQePjM3xNmtZuRfE5Fblc4WGDQ+w+pM=",
         "usagesDigest": "UQVVnIYFocgE+XXaMkCGSG629dur61SaWYy86caWoAs=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},

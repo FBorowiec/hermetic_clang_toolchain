@@ -11,6 +11,31 @@ self-contained, statically linked binaries with zero host system dependencies.
 - **`libstdc++ 14.2.0`**: Alpine's C++ standard library built for `musl`
 - **statically linked**: All binaries are statically linked (no dynamic dependencies)
 
+1. Compiling
+
+- Uses `-nostdinc` and `-nostdinc++` flags to prevent host header inclusion
+- All headers come from the toolchain's `sysroot` (`musl` and Alpine `libstdc++`)
+- No host system headers are used during compilation
+
+1. Linking
+
+- Uses `-nostdlib` flag to prevent host library linking
+- Uses `-static` flag to force static linking
+- All libraries (`musl libc`, `libstdc++`, `libunwind`) come from the toolchain's `sysroot`
+- Produces completely statically linked binaries with no dynamic dependencies
+
+1. Execution/Runtime
+
+- The produced binaries are statically linked
+- No dynamic loader or shared library dependencies
+- Binaries can run on any Linux `x86-64` system without requiring any host libraries
+
+### Note on the compiler itself
+
+The clang compiler binary does require host libraries to run, but this only
+affects the build environment, not the produced binaries. The toolchain
+provides `libtinfo5` to minimize host dependencies for the compiler.
+
 ## How It Works
 
 The toolchain achieves hermeticity through several mechanisms:
@@ -25,15 +50,20 @@ The toolchain achieves hermeticity through several mechanisms:
 1. **Library Stack**:
    - **C Library**: `musl` from Alpine Linux (for static linking)
    - **C++ Library**: `libstdc++` from Alpine Linux (built against `musl`)
-   - **Unwinding**: `libunwind` from LLVM (for exception handling)
+   - **Unwinding**: `libunwind` from `LLVM` (for exception handling)
    - **Linker**: `LLD` from `LLVM`
 
 ## Usage
 
 Add this to your `MODULE.bazel`:
 
-```python
+```starlark
 bazel_dep(name = "hermetic_clang_toolchain", version = "1.0.0")
+
+hermetic_clang = use_extension("@hermetic_clang_toolchain//clang_toolchain:hermetic_clang.bzl", "hermetic_clang_extension")
+use_repo(hermetic_clang, "hermetic_clang_18_1_8")
+
+register_toolchains("@hermetic_clang_toolchain//clang_toolchain:hermetic_clang_toolchain")
 ```
 
 Add this to your `.bazelrc`:
@@ -44,7 +74,7 @@ build --incompatible_enable_cc_toolchain_resolution
 build --action_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 
 # Use hermetic clang toolchain
-build --extra_toolchains=//clang_toolchain:hermetic_clang_toolchain
+build --extra_toolchains=@hermetic_clang_toolchain//clang_toolchain:hermetic_clang_toolchain
 ```
 
 ## Example
