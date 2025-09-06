@@ -2,39 +2,13 @@
 Downloads pre-built LLVM binaries and Alpine Linux packages for hermetic toolchain
 """
 
-VERSION = "18.1.8"
-LLVM_CLANG_URL = "https://github.com/llvm/llvm-project/releases/download/llvmorg-{version}/clang+llvm-{version}-x86_64-linux-gnu-ubuntu-18.04.tar.xz".format(version = VERSION)
+load(":versions.bzl", "DEFAULT_VERSION", "get_toolchain_config")
 
-# Alpine Linux packages for musl and libstdc++
-ALPINE_PACKAGES = [
-    {
-        "name": "musl-dev",
-        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/musl-dev-1.2.5-r10.apk",
-    },
-    {
-        "name": "libstdc++",
-        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libstdc++-14.2.0-r6.apk",
-    },
-    {
-        "name": "libstdc++-dev",
-        "url": "https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libstdc++-dev-14.2.0-r6.apk",
-    },
-]
-
-# Ubuntu packages needed for clang itself to run
-UBUNTU_PACKAGES = [
-    {
-        "name": "libtinfo5",
-        "url": "http://archive.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb",
-        "sha256": "ab89265d8dd18bda6a29d7c796367d6d9f22a39a8fa83589577321e7caf3857b",
-    },
-]
-
-def _fetch_ubuntu_packages(repository_ctx):
+def _fetch_ubuntu_packages(repository_ctx, ubuntu_packages):
     """Download Ubuntu packages needed for clang to run"""
     repository_ctx.execute(["mkdir", "-p", "lib"])
 
-    for pkg in UBUNTU_PACKAGES:
+    for pkg in ubuntu_packages:
         repository_ctx.download(
             url = pkg["url"],
             sha256 = pkg["sha256"],
@@ -56,12 +30,12 @@ def _fetch_ubuntu_packages(repository_ctx):
             "usr",
         ])
 
-def _fetch_alpine_packages(repository_ctx):
+def _fetch_alpine_packages(repository_ctx, alpine_packages):
     repository_ctx.execute(["mkdir", "-p", "alpine-root"])
     repository_ctx.execute(["mkdir", "-p", "sysroot/lib"])
     repository_ctx.execute(["mkdir", "-p", "sysroot/include"])
 
-    for pkg in ALPINE_PACKAGES:
+    for pkg in alpine_packages:
         repository_ctx.download(
             url = pkg["url"],
             output = pkg["name"] + ".apk",
@@ -124,9 +98,9 @@ def _create_files(repository_ctx):
         content = build_content,
     )
 
-def _update_templates(repository_ctx, version):
+def _update_templates(repository_ctx, version, clang_resource_dir):
     repo_path = str(repository_ctx.path("."))
-    clang_include_path = repo_path + "/lib/clang/18/include"
+    clang_include_path = repo_path + "/" + clang_resource_dir
 
     cc_toolchain_config_content = repository_ctx.read(repository_ctx.attr._cc_toolchain_config_template)
     cc_toolchain_config_content = cc_toolchain_config_content.replace(
@@ -146,23 +120,26 @@ def _update_templates(repository_ctx, version):
 
 def _hermetic_clang_repository_impl(repository_ctx):
     version = repository_ctx.attr.version
-    url = repository_ctx.attr.url
+    config = get_toolchain_config(version)
+
+    llvm_config = config["llvm"]
+    url = llvm_config["url"].format(version = llvm_config["version"])
+    strip_prefix = llvm_config["strip_prefix"].format(version = llvm_config["version"])
 
     repository_ctx.download_and_extract(
         url = url,
-        stripPrefix = "clang+llvm-{version}-x86_64-linux-gnu-ubuntu-18.04".format(version = version),
+        stripPrefix = strip_prefix,
     )
 
-    _fetch_ubuntu_packages(repository_ctx)
-    _fetch_alpine_packages(repository_ctx)
+    _fetch_ubuntu_packages(repository_ctx, config["ubuntu"]["packages"])
+    _fetch_alpine_packages(repository_ctx, config["alpine"]["packages"])
 
     _create_files(repository_ctx)
-    _update_templates(repository_ctx, version)
+    _update_templates(repository_ctx, version, llvm_config["clang_resource_dir"])
 
 hermetic_clang_repository = repository_rule(
     implementation = _hermetic_clang_repository_impl,
     attrs = {
-        "url": attr.string(mandatory = True),
         "version": attr.string(mandatory = True),
         "_clang_wrapper_template": attr.label(
             default = "//clang_toolchain/templates:clang_wrapper.sh",
@@ -183,23 +160,34 @@ hermetic_clang_repository = repository_rule(
     },
 )
 
-def _hermetic_clang_extension_impl(_module_ctx):
-    clang_repo_name = "hermetic_clang_" + VERSION.replace(".", "_")
+def _hermetic_clang_extension_impl(module_ctx):
+    requested_version = None
+    for mod in module_ctx.modules:
+        for use in mod.tags.use:
+            version = use.version if hasattr(use, "version") else DEFAULT_VERSION
+            if requested_version and requested_version != version:
+                fail("Multiple different clang versions requested: {} and {}. Only one version can be used.".format(
+                    requested_version,
+                    version,
+                ))
+            requested_version = version
 
-    hermetic_clang_repository(
-        name = clang_repo_name,
-        url = LLVM_CLANG_URL,
-        version = VERSION,
-    )
+    if requested_version:
+        hermetic_clang_repository(
+            name = "hermetic_clang",
+            version = requested_version,
+        )
+
+_use_tag = tag_class(
+    attrs = {
+        "version": attr.string(
+            doc = "The LLVM/Clang version to use (e.g., '18.1.8', '19.1.5', '20.1.8')",
+        ),
+    },
+)
 
 hermetic_clang_extension = module_extension(
     implementation = _hermetic_clang_extension_impl,
+    tag_classes = {"use": _use_tag},
 )
 
-def hermetic_clang_toolchain(name, version):
-    clang_repo_name = "hermetic_clang_" + version.replace(".", "_")
-
-    native.alias(
-        name = name,
-        actual = "@{repo}//:cc_toolchain".format(repo = clang_repo_name),
-    )

@@ -21,6 +21,20 @@ cc_toolchain(
     toolchain_identifier = "hermetic-clang",
 )
 
+toolchain(
+    name = "toolchain",
+    exec_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    target_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    toolchain = ":cc_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
 filegroup(
     name = "compiler_files",
     srcs = [
