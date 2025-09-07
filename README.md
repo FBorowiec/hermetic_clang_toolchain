@@ -6,7 +6,6 @@ self-contained, statically linked binaries with zero host system dependencies.
 ## Hermeticity
 
 - **hermetic**: Produces statically linked binaries with no host dependencies
-- **`clang 18.1.8`**: Uses pre-built `LLVM/Clang` compiler
 - **`musl libc`**: `c/c++` standard libraries fetched from Alpine repo
 - **`libstdc++ 14.2.0`**: Alpine's C++ standard library built for `musl`
 - **statically linked**: All binaries are statically linked (no dynamic dependencies)
@@ -17,18 +16,28 @@ self-contained, statically linked binaries with zero host system dependencies.
 - All headers come from the toolchain's `sysroot` (`musl` and Alpine `libstdc++`)
 - No host system headers are used during compilation
 
-1. Linking
+2. Linking
 
 - Uses `-nostdlib` flag to prevent host library linking
 - Uses `-static` flag to force static linking
 - All libraries (`musl libc`, `libstdc++`, `libunwind`) come from the toolchain's `sysroot`
 - Produces completely statically linked binaries with no dynamic dependencies
 
-1. Execution/Runtime
+3. Execution/Runtime
 
 - The produced binaries are statically linked
 - No dynamic loader or shared library dependencies
 - Binaries can run on any Linux `x86-64` system without requiring any host libraries
+
+## Available Versions
+
+Supported versions with prebuilt binaries:
+
+- 21.1.0 (default - latest)
+- 20.1.8
+- 19.1.7
+- 18.1.8
+- 17.0.6
 
 ### Note on the compiler itself
 
@@ -43,11 +52,11 @@ The toolchain achieves hermeticity through several mechanisms:
 1. **Separate Library Paths**:
    - `lib/`: Contains libraries needed by Clang itself to run (`Ubuntu`/`LLVM` libraries)
    - `sysroot/`: Contains `musl`, `libstdc++` libraries used for compiling
-1. **Compiler Flags**:
+2. **Compiler Flags**:
    - `-nostdinc` and `-nostdinc++`: Prevents using host system headers
    - `-nostdlib`: Prevents linking against host system libraries
    - `-static`: Forces static linking of all dependencies
-1. **Library Stack**:
+3. **Library Stack**:
    - **C Library**: `musl` from Alpine Linux (for static linking)
    - **C++ Library**: `libstdc++` from Alpine Linux (built against `musl`)
    - **Unwinding**: `libunwind` from `LLVM` (for exception handling)
@@ -61,7 +70,8 @@ Add this to your `MODULE.bazel`:
 bazel_dep(name = "hermetic_clang_toolchain", version = "1.0.0")
 
 hermetic_clang = use_extension("@hermetic_clang_toolchain//clang_toolchain:hermetic_clang.bzl", "hermetic_clang_extension")
-use_repo(hermetic_clang, "hermetic_clang_18_1_8")
+hermetic_clang.use(version = "21.1.0")
+use_repo(hermetic_clang, "hermetic_clang")
 
 register_toolchains("@hermetic_clang_toolchain//clang_toolchain:hermetic_clang_toolchain")
 ```
@@ -74,7 +84,7 @@ build --incompatible_enable_cc_toolchain_resolution
 build --action_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
 
 # Use hermetic clang toolchain
-build --extra_toolchains=@hermetic_clang_toolchain//clang_toolchain:hermetic_clang_toolchain
+build --extra_toolchains=@hermetic_clang//:toolchain
 ```
 
 ## Example
@@ -107,16 +117,16 @@ readelf -p .comment bazel-bin/example/simple_test
 1. **`LLVM/Clang 18.1.8`**: Pre-built compiler toolchain from `LLVM` project
    - Provides: `clang`, `clang++`, `lld`, `llvm-ar`, and other `LLVM` tools
    - Source: GitHub releases
-1. **Alpine Packages**:
+2. **Alpine Packages**:
    - `musl-dev`: C standard library
    - `libstdc++`: C++ standard library
    - `libstdc++-dev`: C++ headers
    - Source: Alpine Linux v3.22 repository
-1. **Ubuntu Packages** (for `Clang` runtime only):
+3. **Ubuntu Packages** (for `Clang` runtime only):
    - `libtinfo5`: Terminal info library needed by `Clang`
 
 ### Build Process
 
 1. **Compilation**: Uses `Clang` with hermetic headers from `sysroot`
-1. **Linking**: Statically links all libraries (`musl`, `libstdc++`, `libunwind`)
-1. **Result**: Self-contained binary with no external dependencies
+2. **Linking**: Statically links all libraries (`musl`, `libstdc++`, `libunwind`)
+3. **Result**: Self-contained binary with no external dependencies
